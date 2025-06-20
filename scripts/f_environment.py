@@ -152,11 +152,11 @@ def validate_config(config):
         else:
             experiment_name += f"_sd{config.SEED}"
 
-        return experiment_name
+        return experiment_name if not config.EXPERIMENT_NAME else config.EXPERIMENT_NAME
     
     experiment_name += f"_sd{config.SEED}"
 
-    return experiment_name
+    return experiment_name if not config.EXPERIMENT_NAME else config.EXPERIMENT_NAME
 
 def find_seed_in_weight(weight_name):
     match = re.search(r'sd(\d+)', weight_name)
