@@ -152,7 +152,7 @@ def validate_config(config):
         else:
             experiment_name += f"_sd{config.SEED}"
 
-        return experiment_name
+        return experiment_name if not config.EXPERIMENT_NAME else config.EXPERIMENT_NAME
     
     experiment_name += f"_sd{config.SEED}"
 
