@@ -40,10 +40,12 @@ MODEL:
   MULTICLASSIFIER: True                # fc_swin mid-stream classifier (loss = alpha*swin + (1-alpha)*lstm)
   INFERENCE: False
   INIT_WEIGHTS: 'SwinV2LSTM_e2e_raw_mc_V3_sd5_bestMAP.pt'   # path, or filename under weights/
-  FROZEN_BACKBONE_EVAL: False          # unused for E2E
+  FROZEN_BACKBONE_EVAL: False          # with TRAIN.LAST_LAYERS: True = keep the frozen backbone layers in eval mode (no drop-path)
 
 TRAIN:
   EPOCHS: 10
+  LAST_LAYERS: null                    # N = train only the last N backbone layers (Swin blocks / patch merging, counted from
+                                       # the output; 1 = layers.3.blocks.1 + final norm); heads always train. null = train everything
   BATCH_SIZE: 2
   ACCUMULATION_STEPS: 2                # effective batch 4 (= original training batch size)
   NUM_WORKERS: 8

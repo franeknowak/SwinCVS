@@ -18,6 +18,13 @@ balanced accuracy) are computed on val only, from the LSTM head (the one used at
 inference). The best (val mAP) and last checkpoints are plain state dicts written
 to a fresh run directory <OUTPUT_DIR>/<run_name>_<timestamp>/ and can be passed to
 `inference.py --weights`.
+
+Partial fine-tuning: TRAIN.LAST_LAYERS / --train_last_layers N freezes the SwinV2 backbone
+except its last N layers (see backbone_layer_groups()): the blocks and patch-merging layers
+counted backwards from the output down to patch_embed, the final norm coming along with the
+last block. The heads (LSTM, fc_lstm, fc_swin) always train; 0 = whole backbone frozen.
+MODEL.FROZEN_BACKBONE_EVAL then puts the frozen backbone layers in eval mode.
+null = the config's own setup (whole model for E2E, LSTM + fc_lstm for frozen).
 """
 
 print("Importing libraries...")
@@ -67,6 +74,9 @@ def parse_args():
     parser.add_argument("--val_batch_size", type=int, default=None)
     parser.add_argument("--num_workers", type=int, default=None)
     parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument("--train_last_layers", type=int, default=None,
+                        help="Freeze the backbone except its last N layers (Swin blocks / patch merging, counted "
+                             "from the output; 0 = all frozen); the heads always train. Overrides TRAIN.LAST_LAYERS")
     parser.add_argument("--max_train_iters", type=int, default=None, help="Limit train iterations per epoch")
     parser.add_argument("--max_val_iters", type=int, default=None, help="Limit val (and test) iterations")
     parser.add_argument("--eval_test", action="store_true", help="Evaluate the best checkpoint on the test split")
@@ -91,6 +101,7 @@ def load_config(args):
         "TRAIN.BATCH_SIZE": args.batch_size,
         "VAL.BATCH_SIZE": args.val_batch_size,
         "TRAIN.NUM_WORKERS": args.num_workers,
+        "TRAIN.LAST_LAYERS": args.train_last_layers,
         "SEED": args.seed,
         "TRAIN.MAX_ITERS_PER_EPOCH": args.max_train_iters,
         "VAL.MAX_ITERS": args.max_val_iters,
@@ -115,13 +126,23 @@ def load_config(args):
             node = node[p]
         if leaf not in node:
             raise KeyError(f"Unknown config key in --opts: {key}")
-        node[leaf] = yaml.safe_load(value)
+        value = yaml.safe_load(value)
+        if isinstance(value, str):  # YAML 1.1 reads '1e-3' (no dot) as a string
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+        node[leaf] = value
 
     if not config.MODEL.LSTM:
         raise ValueError("SAFE fine-tuning supports SwinCVS only (MODEL.LSTM=True)")
     config.MODEL.INFERENCE = False
+    if config.TRAIN.get("LAST_LAYERS") is not None and config.TRAIN.LAST_LAYERS < 0:
+        raise ValueError(f"TRAIN.LAST_LAYERS must be >= 0 or null, got {config.TRAIN.LAST_LAYERS}")
     if not config.WANDB.RUN_NAME:
         config.WANDB.RUN_NAME = config.EXPERIMENT_NAME
+        if config.TRAIN.get("LAST_LAYERS") is not None:
+            config.WANDB.RUN_NAME += f"_last{config.TRAIN.LAST_LAYERS}"
     config.freeze()
     return config
 
@@ -154,6 +175,59 @@ def lstm_logits(config, outputs):
     return outputs[1] if uses_multiclassifier(config) else outputs
 
 
+def backbone_layer_groups(model):
+    """(name, params, modules) per SwinV2 layer, output first: the blocks / patch merging in
+    reverse forward order, patch_embed last. The final norm comes with the last block.
+    `modules` are the ones whose train/eval mode follows the layer."""
+    swin = model.swinv2_model
+    groups = []
+    for i in reversed(range(len(swin.layers))):
+        stage = swin.layers[i]
+        blocks = [(f"swinv2_model.layers.{i}.blocks.{j}", b) for j, b in enumerate(stage.blocks)]
+        if stage.downsample is not None:
+            blocks.append((f"swinv2_model.layers.{i}.downsample", stage.downsample))
+        for name, module in reversed(blocks):
+            params, modules = list(module.parameters()), [module]
+            if not groups:
+                params += list(swin.norm.parameters())
+                modules.append(swin.norm)
+            groups.append((name, params, modules))
+    params, modules = list(swin.patch_embed.parameters()), [swin.patch_embed, swin.pos_drop]
+    if swin.ape:
+        params.append(swin.absolute_pos_embed)
+    groups.append(("swinv2_model.patch_embed", params, modules))
+    assert sum(len(g[1]) for g in groups) == len(list(swin.parameters())), "backbone_layer_groups misses parameters"
+    return groups
+
+
+def apply_last_layers(config, model):
+    """Train the heads (LSTM, fc_lstm, fc_swin) and only the last TRAIN.LAST_LAYERS backbone layers;
+    the rest of the backbone is frozen. Returns the frozen backbone modules (to be put in eval mode
+    when MODEL.FROZEN_BACKBONE_EVAL), or None if LAST_LAYERS is unset."""
+    n = config.TRAIN.get("LAST_LAYERS")
+    if n is None:
+        return None
+    groups = backbone_layer_groups(model)
+    if n > len(groups):
+        print(f"TRAIN.LAST_LAYERS={n} > {len(groups)} backbone layers: training all of them")
+    trained, frozen = groups[:n], groups[n:]
+    for p in model.parameters():
+        p.requires_grad = True  # heads; frozen backbone layers are switched off below
+    for _, params, _ in frozen:
+        for p in params:
+            p.requires_grad = False
+    # fc_swin shares the ENCODER_LR param group with the backbone (build_optimizer)
+    if (trained or getattr(model, "fc_swin", None) is not None) and config.TRAIN.OPTIMIZER.ENCODER_LR <= 0:
+        raise ValueError(f"TRAIN.LAST_LAYERS={n} trains backbone layers / fc_swin, but TRAIN.OPTIMIZER.ENCODER_LR "
+                         f"is {config.TRAIN.OPTIMIZER.ENCODER_LR}: set it > 0 (e.g. --opts TRAIN.OPTIMIZER.ENCODER_LR 5e-6)")
+    n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    n_total = sum(p.numel() for p in model.parameters())
+    print(f"Training the heads + the last {len(trained)} of {len(groups)} backbone layers, "
+          f"output first: {[g[0] for g in trained]}")
+    print(f"Trainable parameters: {n_trainable:,} / {n_total:,}")
+    return [m for _, _, modules in frozen for m in modules]
+
+
 def build_lr_scheduler(config, optimizer, steps_per_epoch):
     """Per-optimizer-step multiplier on every param group's lr: linear warmup then cosine to MIN_LR_RATIO."""
     sched = config.TRAIN.LR_SCHEDULER
@@ -175,10 +249,14 @@ def build_lr_scheduler(config, optimizer, steps_per_epoch):
 
 
 def train_one_epoch(config, model, loader, criterion, optimizer, loss_scaler, lr_scheduler,
-                    device, epoch, alpha, global_step, wandb_run):
+                    device, epoch, alpha, global_step, wandb_run, frozen_backbone=None):
     model.train()
-    if not config.MODEL.E2E and config.MODEL.FROZEN_BACKBONE_EVAL:
-        model.swinv2_model.eval()
+    if config.MODEL.FROZEN_BACKBONE_EVAL:
+        if frozen_backbone is not None:  # TRAIN.LAST_LAYERS: only the frozen backbone layers
+            for m in frozen_backbone:
+                m.eval()
+        elif not config.MODEL.E2E:
+            model.swinv2_model.eval()
 
     use_amp = config.TRAIN.AMP and device.type == "cuda"
     accum = config.TRAIN.ACCUMULATION_STEPS
@@ -339,6 +417,7 @@ def main():
 
     # MODEL
     model = build_finetune_model(config)
+    frozen_backbone = apply_last_layers(config, model)
     model.to(device)
 
     # LOSS: pos_weight = neg/pos per class on the SAFE train split
@@ -377,7 +456,7 @@ def main():
 
         train_log, global_step = train_one_epoch(
             config, model, train_loader, criterion, optimizer, loss_scaler, lr_scheduler,
-            device, epoch, alpha, global_step, wandb_run,
+            device, epoch, alpha, global_step, wandb_run, frozen_backbone,
         )
         val_metrics, val_outputs = evaluate(config, model, val_loader, criterion, device, alpha, prefix="val")
         print(f"Epoch {epoch + 1}: {fmt(train_log)}")
