@@ -42,9 +42,20 @@ def get_balanced_accuracies(y_true, y_pred):
     C1_balanced_accuracy = _nanmean([C1_recall, C1_specificity])
     C2_balanced_accuracy = _nanmean([C2_recall, C2_specificity])
     C3_balanced_accuracy = _nanmean([C3_recall, C3_specificity])
-    total_balanced_accuracy = _nanmean([C1_recall, C2_recall, C3_recall])
+    # Average balanced accuracy = mean of the per-criterion balanced accuracies (recall and specificity).
+    # Previously this was the mean recall (sensitivity) only - see get_mean_recall.
+    total_balanced_accuracy = _nanmean([C1_balanced_accuracy, C2_balanced_accuracy, C3_balanced_accuracy])
 
     return C1_balanced_accuracy, C2_balanced_accuracy, C3_balanced_accuracy, total_balanced_accuracy
+
+def get_mean_recall(y_true, y_pred):
+    """
+    Mean recall (sensitivity) over C1-C3. This is what 'avg_bal_acc' reported before it was corrected to
+    the mean balanced accuracy; kept as 'avg_recall' so earlier results remain comparable.
+    """
+    true_labels = np.concatenate([np.array(x) for x in y_true])
+    predicted_labels = np.concatenate([np.array(x) for x in y_pred])
+    return _nanmean([get_recall(true_labels[:, i], predicted_labels[:, i]) for i in range(3)])
 
 def get_recall(true, predicted):
     TP = np.sum((true == 1) & (predicted == 1))

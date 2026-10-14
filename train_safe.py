@@ -50,7 +50,7 @@ from scripts.f_environment import get_config, set_deterministic_behaviour
 from scripts.f_build import build_finetune_model
 from scripts.f_dataset_safe import get_safe_datasets, get_safe_dataloader, compute_pos_weight
 from scripts.f_training_utils import build_optimizer, update_params, NativeScalerWithGradNormCount
-from scripts.f_metrics import get_map, get_balanced_accuracies
+from scripts.f_metrics import get_map, get_balanced_accuracies, get_mean_recall
 
 warnings.filterwarnings("ignore")
 
@@ -342,9 +342,8 @@ def evaluate(config, model, loader, criterion, device, alpha, prefix="val"):
         preds.append(torch.round(probability).cpu())
         trues.append(targets.cpu())
 
-    C1_bacc, C2_bacc, C3_bacc, mean_recall = get_balanced_accuracies(trues, preds)
+    C1_bacc, C2_bacc, C3_bacc, bacc_mean = get_balanced_accuracies(trues, preds)
     C1_ap, C2_ap, C3_ap, mAP = get_map(trues, probs)
-    baccs = [C1_bacc, C2_bacc, C3_bacc]
     metrics = {
         f"{prefix}/loss": sums["loss"] / max(1, n_samples),
         f"{prefix}/loss_lstm": sums["loss_lstm"] / max(1, n_samples),
@@ -356,9 +355,9 @@ def evaluate(config, model, loader, criterion, device, alpha, prefix="val"):
         f"{prefix}/bacc_C2": C2_bacc,
         f"{prefix}/bacc_C3": C3_bacc,
         # mean of the three per-criterion balanced accuracies
-        f"{prefix}/bacc_mean": float(np.nanmean(baccs)) if not np.all(np.isnan(baccs)) else float("nan"),
-        # f_metrics' 4th return value (reported as "avg_bal_acc" by SwinCVS.py) is the mean RECALL
-        f"{prefix}/recall_mean": mean_recall,
+        f"{prefix}/bacc_mean": bacc_mean,
+        # mean recall (sensitivity) over C1-C3, reported as "avg_recall" by SwinCVS.py
+        f"{prefix}/recall_mean": get_mean_recall(trues, preds),
     }
     if uses_multiclassifier(config):
         metrics[f"{prefix}/loss_swin"] = sums["loss_swin"] / max(1, n_samples)

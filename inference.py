@@ -55,7 +55,7 @@ from tqdm import tqdm
 # Local imports
 from scripts.f_environment import get_config, set_deterministic_behaviour
 from scripts.f_build import build_inference_model
-from scripts.f_metrics import get_map, get_balanced_accuracies
+from scripts.f_metrics import get_map, get_balanced_accuracies, get_mean_recall
 from scripts.resource_monitor import ResourceMonitor
 
 # Endoscapes pipeline (untouched)
@@ -358,6 +358,7 @@ def run_endoscapes(config, args, model, device, output_dir):
 
     metrics = {
         "avg_bal_acc": round(total_bacc, 4),
+        "avg_recall": round(get_mean_recall([targets], [preds]), 4),
         "C1_bacc": round(C1_bacc, 4),
         "C2_bacc": round(C2_bacc, 4),
         "C3_bacc": round(C3_bacc, 4),

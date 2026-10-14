@@ -42,6 +42,12 @@ The script automatically downloads the dataset and the weights. If you already h
 After changing the config, execute the script by running the SwinCVS.py and specifying which config file to use (default below):<br>
 python3 SwinCVS.py --config_path config/SwinCVS_config.yaml
 
+**Note on metrics:** `avg_bal_acc` in the results json is the mean of the per-criterion balanced accuracies (`C1_bacc`, `C2_bacc`, `C3_bacc`). In earlier versions of this code it was the mean recall (sensitivity) over C1-C3; that value is still saved as `avg_recall`, so older results can be compared. Per-criterion values and mAP are unchanged.
+
+## Testing
+
+`python3 test.py` checks the metrics against scikit-learn, loads every config, builds each model variant, and runs `inference.py` and `train_safe.py` end-to-end on a small synthetic dataset (random weights, CPU/MPS/CUDA; no dataset or GPU needed, takes a few minutes). Run a single group with e.g. `python3 -m unittest test.TestMetrics`.
+
 ## Extensions: standalone inference and fine-tuning on new data
 
 Contributed by [@supremekhadka](https://github.com/supremekhadka). These tools sit alongside the original pipeline above, which is unchanged. For full documentation, benchmark results and the original development history, see their fork: [supremekhadka/SwinCVS](https://github.com/supremekhadka/SwinCVS).
