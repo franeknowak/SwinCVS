@@ -1,0 +1,42 @@
+# Endoscapes-format inference config for inference.py --dataset endoscapes (see readme).
+CSV_PATH: null     # csv with vid, frame, C1, C2, C3 columns, in consecutive blocks of 5 rows (label on the 5th row); or pass --csv_path
+IMAGES_PATH: null  # folder holding <vid>_<frame>.jpg images; or pass --images_path
+
+CUDA_ID: 0
+SEED: 42
+ENDOSCAPES_MEAN: [0.485, 0.456, 0.406]
+ENDOSCAPES_STD: [0.229, 0.224, 0.225]
+RESIZE: [384, 683]
+CENTER_CROP: 384
+BATCH_SIZE: 1   # unused: inference.py always runs at batch size 1
+
+# Default weights per mode (--mode e2e|frozen on the CLI selects between these;
+# override either at runtime with --weights)
+WEIGHTS_E2E: 'SwinV2LSTM_e2e_raw_mc_V3_sd5_bestMAP.pt'
+WEIGHTS_FROZEN: 'SwinCVS_frozen_ENDP_sd5_bestMAP.pt'
+
+# SWINCVS MODEL PARAMS (E2E / INFERENCE are set programmatically from --mode)
+MODEL:
+  LSTM: True
+  LSTM_PARAMS:
+    NUM_LAYERS: 2
+    HIDDEN_SIZE: 256
+  MULTICLASSIFIER: True # Classifier WILL NOT be implemented if E2E=False
+# SWINV2 BACKBONE PARAMS
+BACKBONE:
+  DROP_PATH_RATE: 0.2
+  DROP_RATE: 0.0
+  NUM_CLASSES: 1000
+  SWINV2:
+    PATCH_SIZE: 4
+    IN_CHANS: 3
+    EMBED_DIM: 128
+    DEPTHS: [ 2, 2, 18, 2 ]
+    NUM_HEADS: [ 4, 8, 16, 32 ]
+    WINDOW_SIZE: 24
+    PRETRAINED_WINDOW_SIZES: [ 12, 12, 12, 6 ]
+    MLP_RATIO: 4
+    QKV_BIAS: True
+    APE: False
+    PATCH_NORM: True
+  USE_CHECKPOINT: False

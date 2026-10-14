@@ -16,7 +16,7 @@ from scripts.f_environment import get_config, set_deterministic_behaviour, verif
 from scripts.f_dataset import get_datasets, get_dataloaders
 from scripts.f_build import build_model
 from scripts.f_training_utils import build_optimizer, update_params, NativeScalerWithGradNormCount
-from scripts.f_metrics import get_map, get_balanced_accuracies
+from scripts.f_metrics import get_map, get_balanced_accuracies, get_mean_recall
 from scripts.f_training import save_weights
 warnings.filterwarnings("ignore")
 
@@ -161,7 +161,7 @@ if not config.MODEL.INFERENCE:
         # Get validation scores
         C1_balanced_accuracy, C2_balanced_accuracy, C3_balanced_accuracy, total_balanced_accuracy = get_balanced_accuracies(val_targets, val_predictions)
         C1_ap, C2_ap, C3_ap, mAP = get_map(val_targets, val_probabilities)
-        print('\nAverage balanced accuracy', round((C1_balanced_accuracy+C1_balanced_accuracy+C3_balanced_accuracy)/3, 4))
+        print('\nAverage balanced accuracy', round((C1_balanced_accuracy+C2_balanced_accuracy+C3_balanced_accuracy)/3, 4))
         print('C1 bacc', round(C1_balanced_accuracy, 4))
         print('C2 bacc', round(C2_balanced_accuracy, 4))
         print('C3 bacc', round(C3_balanced_accuracy, 4))
@@ -175,7 +175,7 @@ if not config.MODEL.INFERENCE:
         val_probabilities_2save = torch.cat(val_probabilities, dim=0).tolist()
         val_targets_2save = torch.cat(val_targets, dim=0).tolist()
 
-        epoch_results = {'avg_bal_acc': round(total_balanced_accuracy, 4),
+        epoch_results = {'avg_bal_acc': round(total_balanced_accuracy, 4), 'avg_recall': round(get_mean_recall(val_targets, val_predictions), 4),
                         'C1_bacc': round(C1_balanced_accuracy, 4), 'C2_bacc': round(C2_balanced_accuracy, 4), 'C3_bacc': round(C3_balanced_accuracy, 4),
                         'avg_map': round(mAP, 4),
                         'C1_map': round(C1_ap, 4), 'C2_map': round(C2_ap, 4), 'C3_map': round(C3_ap, 4),
@@ -258,7 +258,7 @@ C1_ap, C2_ap, C3_ap, mAP = get_map(test_targets, test_probabilities)
 
 # Print metrics
 print('\nTesting results:')
-print('Average balanced accuracy', round((C1_balanced_accuracy+C1_balanced_accuracy+C3_balanced_accuracy)/3, 4))
+print('Average balanced accuracy', round((C1_balanced_accuracy+C2_balanced_accuracy+C3_balanced_accuracy)/3, 4))
 print('C1 bacc', round(C1_balanced_accuracy, 4))
 print('C2 bacc', round(C2_balanced_accuracy, 4))
 print('C3 bacc', round(C3_balanced_accuracy, 4))
@@ -276,7 +276,7 @@ test_predictions_2save = torch.cat(test_predictions, dim=0).tolist()
 test_probabilities_2save = torch.cat(test_probabilities, dim=0).tolist()
 test_targets_2save = torch.cat(test_targets, dim=0).tolist()
 
-epoch_results = {'avg_bal_acc': round(total_balanced_accuracy, 4),
+epoch_results = {'avg_bal_acc': round(total_balanced_accuracy, 4), 'avg_recall': round(get_mean_recall(test_targets, test_predictions), 4),
                 'C1_bacc': round(C1_balanced_accuracy, 4), 'C2_bacc': round(C2_balanced_accuracy, 4), 'C3_bacc': round(C3_balanced_accuracy, 4),
                 'avg_map': round(mAP, 4),
                 'C1_map': round(C1_ap, 4), 'C2_map': round(C2_ap, 4), 'C3_map': round(C3_ap, 4),

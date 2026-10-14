@@ -9,7 +9,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
-from timm.models.layers import DropPath, to_2tuple, trunc_normal_
+from timm.layers import DropPath, to_2tuple, trunc_normal_
 import numpy as np
 
 
@@ -427,7 +427,9 @@ class BasicLayer(nn.Module):
     def forward(self, x):
         for blk in self.blocks:
             if self.use_checkpoint:
-                x = checkpoint.checkpoint(blk, x)
+                # non-reentrant: the reentrant version computes no parameter grads when x does not
+                # require grad (trainable block after frozen ones, see TRAIN.LAST_LAYERS in train_safe.py)
+                x = checkpoint.checkpoint(blk, x, use_reentrant=False)
             else:
                 x = blk(x)
         if self.downsample is not None:

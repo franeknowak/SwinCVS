@@ -60,4 +60,6 @@ BACKBONE:
     APE: False
     PATCH_NORM: True
   USE_CHECKPOINT: False
-  
+# TESTING PARAMS
+INFERENCE:
+  BATCH_SIZE: 1 # Batch size of the test-set pass (1 = original setup; inference time is then reported per sample)

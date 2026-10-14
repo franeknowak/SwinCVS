@@ -42,6 +42,30 @@ The script automatically downloads the dataset and the weights. If you already h
 After changing the config, execute the script by running the SwinCVS.py and specifying which config file to use (default below):<br>
 python3 SwinCVS.py --config_path config/SwinCVS_config.yaml
 
+**Note on metrics:** `avg_bal_acc` in the results json is the mean of the per-criterion balanced accuracies (`C1_bacc`, `C2_bacc`, `C3_bacc`). In earlier versions of this code it was the mean recall (sensitivity) over C1-C3; that value is still saved as `avg_recall`, so older results can be compared. Per-criterion values and mAP are unchanged.
+
+## Testing
+
+`python3 test.py` checks the metrics against scikit-learn, loads every config, builds each model variant, and runs `inference.py` and `train_safe.py` end-to-end on a small synthetic dataset (random weights, CPU/MPS/CUDA; no dataset or GPU needed, takes a few minutes). Run a single group with e.g. `python3 -m unittest test.TestMetrics`.
+
+## Extensions: standalone inference and fine-tuning on new data
+
+Contributed by [@supremekhadka](https://github.com/supremekhadka). These tools sit alongside the original pipeline above, which is unchanged. For full documentation, benchmark results and the original development history, see their fork: [supremekhadka/SwinCVS](https://github.com/supremekhadka/SwinCVS).
+
+- **Weights**: `python3 download_weights.py` downloads all released weights up front, including the frozen SwinCVS weights (`SwinCVS_frozen_ENDP_sd5_bestMAP.pt`, hosted on [Hugging Face](https://huggingface.co/supremekhadka/SwinCVS)). A frozen-model training config is also provided: `config/SwinCVS_frozen_config.yaml`.
+- **Inference** (`inference.py`): runs the released (or your own) SwinCVS weights on new data without the training pipeline. Runs on CUDA, Apple silicon (MPS) or CPU, picked automatically. Also writes per-frame/per-video timing and GPU memory/power usage.
+```
+python3 inference.py --dataset {endoscapes,safe} --config_path config/infer.yaml|config/infer_safe.yaml \
+    --mode {e2e,frozen} --output_dir results/my_run [--csv_path ...] [--images_path ... | --video_root ...]
+```
+  - `--dataset endoscapes`: a csv with `vid, frame, C1, C2, C3` columns in consecutive blocks of 5 rows (label on the 5th row), images in one folder as `<vid>_<frame>.jpg`. Writes `result.csv` with confidences and `metrics.json`.
+  - `--dataset safe`: a csv with `vid, frame, is_ds_keyframe` columns; each keyframe is predicted from itself and the 4 preceding frames. Images in `VIDEO_ROOT/<vid>/<vid>_<frame>.jpg`. Writes `result.csv` with confidences.
+- **Fine-tuning** (`train_safe.py`): fine-tunes the released e2e or frozen SwinCVS on a SAFE-format dataset (`labels/1fps/splits/{train,val,test}.csv` with `C1, C2, C3` labels). Supports training only the last N backbone layers (`--train_last_layers N`) and optional wandb logging (`--no_wandb` to disable). Checkpoints can be passed to `inference.py --weights`.
+```
+python3 train_safe.py --config config/SwinCVS_safe_finetune_frozen.yaml --data_root /path/to/SAFE
+python3 train_safe.py --config config/SwinCVS_safe_finetune_e2e.yaml --data_root /path/to/SAFE
+```
+
 ## Citation
 
 If you use this work in your research, please cite our paper:
