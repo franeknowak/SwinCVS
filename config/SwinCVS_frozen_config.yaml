@@ -1,0 +1,66 @@
+# Frozen SwinCVS: frozen SwinV2 backbone (Endoscapes-pretrained) + LSTM. Contributed by @supremekhadka.
+# GENERAL PARAMS
+EXPERIMENT_NAME: null # Overrides automatic experiment naming 
+SEED: 5
+DATASET_DIR: null # Folder that contains 'endoscapes' dataset folder, or null to install in repo directory
+# SWINCVS MODEL PARAMS
+MODEL:
+  LSTM: True
+  LSTM_PARAMS:
+    NUM_LAYERS: 2
+    HIDDEN_SIZE: 256
+  E2E: False # Decides if backbone is NOT frozen in training
+  MULTICLASSIFIER: True # Classifier WILL NOT be implemented if E2E=False
+  INFERENCE: False
+  INFERENCE_WEIGHTS: 'SwinV2LSTM_e2e_raw_mc_V3_sd5_bestMAP.pt'
+# TRAINING PARAMS
+TRAIN:
+  EPOCHS: 10
+  LIMIT_DATA_FRACTION: 1 # Limits how much data is used for constructing the train, val, test datasets. 1 = 100%, 5 = 20% etc.
+  TRANSFORMS:
+    ENDOSCAPES_MEAN: [0.485, 0.456, 0.406]
+    ENDOSCAPES_STD: [0.229, 0.224, 0.225]
+    CENTER_CROP: 480
+  BATCH_SIZE: 4
+  OPTIMIZER:
+    NAME: 'adamw'
+    EPS: 1.0e-08
+    BETAS: [0.9, 0.999]
+    WEIGHT_DECAY: 0.02
+    ENCODER_LR: 0.00001
+    CLASSIFIER_LR: 0.001
+  CLASS_WEIGHTS: [3.19852941, 4.46153846, 2.79518072]
+  WARMUP_EPOCHS: 4
+  WARMUP_LR: 0.001
+  BASE_LR: 0.001
+  MIN_LR: 0.0000001
+  MULTICLASSIFIER_ALPHA: 0.8
+  SAVE_WEIGHTS: True
+  CHECKPOINT_PATH: null # null if default to weights dir
+  LR_SCHEDULER:
+    NAME: 'cosine'
+    WARMUP_PREFIX: False
+  CLIP_GRAD: 5
+  ACCUMULATION_STEPS: 1
+# SWINV2 BACKBONE PARAMS
+BACKBONE:
+  PRETRAINED: 'Swin_backbone_no_augm_sd4_bestMAP.pt' # Endoscapes-pretrained backbone for the frozen model
+  DROP_PATH_RATE: 0.2
+  DROP_RATE: 0.0
+  NUM_CLASSES: 1000
+  SWINV2:
+    PATCH_SIZE: 4
+    IN_CHANS: 3
+    EMBED_DIM: 128
+    DEPTHS: [ 2, 2, 18, 2 ]
+    NUM_HEADS: [ 4, 8, 16, 32 ]
+    WINDOW_SIZE: 24
+    PRETRAINED_WINDOW_SIZES: [ 12, 12, 12, 6 ]
+    MLP_RATIO: 4
+    QKV_BIAS: True
+    APE: False
+    PATCH_NORM: True
+  USE_CHECKPOINT: False
+# TESTING PARAMS
+INFERENCE:
+  BATCH_SIZE: 4 # Batch size of the test-set pass (inference time is then reported per batch)

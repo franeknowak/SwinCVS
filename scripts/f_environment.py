@@ -29,7 +29,45 @@ def verify_results_weights_folder(pwd):
         print('Certain weights missing. Redownloading weights...')
         weights_url = 'https://liveuclac-my.sharepoint.com/:u:/g/personal/rmapfmn_ucl_ac_uk/EdedZjlxigtEv67d1v-MkXYBhwUcKVoB5SDsxUVhaMptNg?download=1'
         download_extract_zip(weights_dir, weights_url)
-        
+
+    # Frozen SwinCVS weights (Endoscapes-pretrained backbone), hosted separately by a contributor
+    frozen_endp_weight = weights_dir / "SwinCVS_frozen_ENDP_sd5_bestMAP.pt"
+    if not frozen_endp_weight.exists():
+        print("SwinCVS_frozen_ENDP_sd5_bestMAP.pt missing. Downloading...")
+        frozen_endp_url = "https://huggingface.co/supremekhadka/SwinCVS/resolve/main/SwinCVS_frozen_ENDP_sd5_bestMAP.pt"
+        download_file(frozen_endp_weight, frozen_endp_url)
+
+def download_file(download_path, url):
+    """
+    Downloads a single file from a given url to a specified path.
+    """
+    download_path = Path(download_path)
+    download_path.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        print(f"Downloading file from {url}...")
+        response = requests.get(url, stream=True)
+        response.raise_for_status()
+
+        total_size = int(response.headers.get('content-length', 0))
+
+        with open(download_path, "wb") as file, tqdm(
+            desc="Downloading",
+            total=total_size,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+        ) as progress:
+            for chunk in response.iter_content(chunk_size=8192):
+                file.write(chunk)
+                progress.update(len(chunk))
+        print(f"Downloaded file to {download_path}.")
+
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred during download: {e}")
+        if download_path.exists():
+            download_path.unlink()
+
 def download_extract_zip(download_path, url):
     """
     Downloads and extracts zip file from a given url to a specified folder.
@@ -77,12 +115,15 @@ def download_extract_zip(download_path, url):
             zip_file_path.unlink()
             print(f"Cleaned up temporary zip file: {zip_file_path}")
 
-def get_config(config_path):
+def get_config(config_path, mode='train'):
     """
     Runs functions related to reading, processing, and informing user about the config setup.
+    mode='inference' only loads the config (no SwinCVS.py experiment naming/validation) - used by inference.py and train_safe.py.
     """
     config_dict = read_config(config_path)
     config = config_to_yacs(config_dict)
+    if mode == 'inference':
+        return config
     experiment_name = validate_config(config)
     return config, experiment_name
 

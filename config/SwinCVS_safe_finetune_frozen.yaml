@@ -1,0 +1,102 @@
+# ---------------------------------------------------------------------------
+# SAFE fine-tuning config: FROZEN SwinCVS (backbone frozen, only LSTM + fc_lstm train).
+#
+#   python3 train_safe.py --config config/SwinCVS_safe_finetune_frozen.yaml
+#
+# Initialised from the full Endoscapes-trained frozen SwinCVS checkpoint
+# (MODEL.INIT_WEIGHTS, strict load). Outputs go to a fresh run directory
+# <OUTPUT_DIR>/<EXPERIMENT_NAME>_<timestamp>/ - nothing in weights/ is touched.
+# ---------------------------------------------------------------------------
+EXPERIMENT_NAME: safe_finetune_frozen  # also the wandb run name
+SEED: 42
+DEVICE: 'cuda:0'                       # 'cuda:N' or 'cpu'
+OUTPUT_DIR: work_dirs/safe_finetune    # run dir = OUTPUT_DIR/<EXPERIMENT_NAME>_<timestamp>
+
+DATA:
+  ROOT: ../data/SAFE                   # contains labels/<FPS>/splits/*.csv and images/<FPS>/<vid>/<vid>_<frame>.jpg
+  FPS: 1fps
+  TRAIN_CSV: null                      # optional explicit overrides of labels/<FPS>/splits/<split>.csv
+  VAL_CSV: null
+  TEST_CSV: null
+  TRANSFORMS:                          # identical to SAFE inference (config/infer_safe.yaml) - do not change
+    RESIZE: [384, 683]
+    CENTER_CROP: 384
+    MEAN: [0.485, 0.456, 0.406]
+    STD: [0.229, 0.224, 0.225]
+  AUGMENT:                             # train split only; params drawn once per 5-frame sequence
+    ENABLE: True
+    HFLIP_PROB: 0.5
+    BRIGHTNESS: 0.1
+    CONTRAST: 0.1
+    SATURATION: 0.1
+    HUE: 0.02
+
+MODEL:
+  LSTM: True
+  LSTM_PARAMS:
+    NUM_LAYERS: 2
+    HIDDEN_SIZE: 256
+  E2E: False                           # backbone frozen
+  MULTICLASSIFIER: True                # ignored when E2E=False (no fc_swin)
+  INFERENCE: False
+  INIT_WEIGHTS: 'SwinCVS_frozen_ENDP_sd5_bestMAP.pt'   # path, or filename under weights/
+  FROZEN_BACKBONE_EVAL: False          # True = keep frozen backbone (layers) in eval mode (no drop-path); False matches original training
+
+TRAIN:
+  EPOCHS: 20
+  LAST_LAYERS: null                    # N = train only the last N backbone layers (Swin blocks / patch merging, counted from
+                                       # the output; 1 = layers.3.blocks.1 + final norm); heads always train. null = whole backbone frozen
+  BATCH_SIZE: 8
+  ACCUMULATION_STEPS: 1
+  NUM_WORKERS: 8
+  AMP: True
+  CLIP_GRAD: 5
+  OPTIMIZER:
+    NAME: 'adamw'
+    EPS: 1.0e-08
+    BETAS: [0.9, 0.999]
+    WEIGHT_DECAY: 0.02
+    ENCODER_LR: 0.0                    # unused (backbone frozen); set > 0 when LAST_LAYERS >= 1
+    CLASSIFIER_LR: 0.0001              # original Endoscapes training: 1e-3
+  LR_SCHEDULER:
+    NAME: 'cosine'                     # 'cosine' (per-step, with linear warmup) or 'none' (constant)
+    WARMUP_EPOCHS: 1
+    MIN_LR_RATIO: 0.01                 # final lr = lr * MIN_LR_RATIO
+  POS_WEIGHT: [5.86734693877551, 24.68702290076336, 12.406374501992032]   # C1, C2, C3; null = neg/pos per class from the train split
+  MULTICLASSIFIER_ALPHA: 0.6           # E2E only
+  MULTICLASSIFIER_ALPHA_DECAY: False   # E2E only
+  MAX_ITERS_PER_EPOCH: null            # debugging / smoke tests: limit train iterations per epoch
+
+VAL:
+  BATCH_SIZE: 8
+  MAX_ITERS: null                      # debugging / smoke tests: limit val iterations
+
+TEST:
+  ENABLE: False                        # evaluate best checkpoint on the test split at the end (also --eval_test)
+
+WANDB:
+  ENABLE: True
+  PROJECT: safe-cvs-finetune
+  ENTITY: null
+  RUN_NAME: null                       # null = EXPERIMENT_NAME
+  TAGS: ['frozen']
+# WANDB_MODE (online/offline/disabled) env var is respected.
+
+# SWINV2 BACKBONE PARAMS (fixed by the released weights)
+BACKBONE:
+  DROP_PATH_RATE: 0.2
+  DROP_RATE: 0.0
+  NUM_CLASSES: 1000
+  SWINV2:
+    PATCH_SIZE: 4
+    IN_CHANS: 3
+    EMBED_DIM: 128
+    DEPTHS: [ 2, 2, 18, 2 ]
+    NUM_HEADS: [ 4, 8, 16, 32 ]
+    WINDOW_SIZE: 24
+    PRETRAINED_WINDOW_SIZES: [ 12, 12, 12, 6 ]
+    MLP_RATIO: 4
+    QKV_BIAS: True
+    APE: False
+    PATCH_NORM: True
+  USE_CHECKPOINT: False                # no backward through the frozen backbone, so not needed

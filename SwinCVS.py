@@ -161,7 +161,7 @@ if not config.MODEL.INFERENCE:
         # Get validation scores
         C1_balanced_accuracy, C2_balanced_accuracy, C3_balanced_accuracy, total_balanced_accuracy = get_balanced_accuracies(val_targets, val_predictions)
         C1_ap, C2_ap, C3_ap, mAP = get_map(val_targets, val_probabilities)
-        print('\nAverage balanced accuracy', round((C1_balanced_accuracy+C1_balanced_accuracy+C3_balanced_accuracy)/3, 4))
+        print('\nAverage balanced accuracy', round((C1_balanced_accuracy+C2_balanced_accuracy+C3_balanced_accuracy)/3, 4))
         print('C1 bacc', round(C1_balanced_accuracy, 4))
         print('C2 bacc', round(C2_balanced_accuracy, 4))
         print('C3 bacc', round(C3_balanced_accuracy, 4))
@@ -258,7 +258,7 @@ C1_ap, C2_ap, C3_ap, mAP = get_map(test_targets, test_probabilities)
 
 # Print metrics
 print('\nTesting results:')
-print('Average balanced accuracy', round((C1_balanced_accuracy+C1_balanced_accuracy+C3_balanced_accuracy)/3, 4))
+print('Average balanced accuracy', round((C1_balanced_accuracy+C2_balanced_accuracy+C3_balanced_accuracy)/3, 4))
 print('C1 bacc', round(C1_balanced_accuracy, 4))
 print('C2 bacc', round(C2_balanced_accuracy, 4))
 print('C3 bacc', round(C3_balanced_accuracy, 4))

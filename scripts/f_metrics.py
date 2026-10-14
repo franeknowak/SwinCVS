@@ -37,23 +37,25 @@ def get_balanced_accuracies(y_true, y_pred):
     C2_specificity = get_specificity(C2_true, C2_predicted)
     C3_specificity = get_specificity(C3_true, C3_predicted)
 
-    C1_balanced_accuracy = (C1_recall+C1_specificity)/2
-    C2_balanced_accuracy = (C2_recall+C2_specificity)/2
-    C3_balanced_accuracy = (C3_recall+C3_specificity)/2
-    total_balanced_accuracy = (C1_recall+C2_recall+C3_recall)/3
+    # nan-aware means: a criterion with no positives (or no negatives) has an undefined
+    # recall (or specificity); average over whatever is defined instead of dividing by zero.
+    C1_balanced_accuracy = _nanmean([C1_recall, C1_specificity])
+    C2_balanced_accuracy = _nanmean([C2_recall, C2_specificity])
+    C3_balanced_accuracy = _nanmean([C3_recall, C3_specificity])
+    total_balanced_accuracy = _nanmean([C1_recall, C2_recall, C3_recall])
 
     return C1_balanced_accuracy, C2_balanced_accuracy, C3_balanced_accuracy, total_balanced_accuracy
 
 def get_recall(true, predicted):
     TP = np.sum((true == 1) & (predicted == 1))
     FN = np.sum((true == 1) & (predicted == 0))
-    return TP / (TP + FN)
+    return TP / (TP + FN) if (TP + FN) > 0 else float("nan")
 
 
 def get_specificity(true, predicted):
     TN = np.sum((true == 0) & (predicted == 0))
     FP = np.sum((true == 0) & (predicted == 1))
-    return TN / (TN + FP)
+    return TN / (TN + FP) if (TN + FP) > 0 else float("nan")
 
 
 def get_map(y_true, y_pred_probs_list):
@@ -64,16 +66,28 @@ def get_map(y_true, y_pred_probs_list):
     for class_idx in range(true_labels.shape[1]):
         class_true = true_labels[:, class_idx]
         class_scores = predicted_probabilities[:, class_idx]
+        if np.sum(class_true == 1) == 0:
+            # AP is undefined without positives
+            average_precisions.append(float("nan"))
+            continue
         average_precision = average_precision_score(class_true, class_scores)
         average_precisions.append(average_precision)
 
     # Calculate the mean of the average precisions across all classes to obtain mAP
-    mAP = np.mean(average_precisions)
+    # (over classes where AP is defined)
+    mAP = _nanmean(average_precisions)
     C1_ap = average_precisions[0]
     C2_ap = average_precisions[1]
     C3_ap = average_precisions[2]
     
     return C1_ap, C2_ap, C3_ap, mAP
+
+def _nanmean(values):
+    values = np.asarray(values, dtype=float)
+    if np.all(np.isnan(values)):
+        return float("nan")
+    return float(np.nanmean(values))
+
 
 def find_best_epoch(results_dict):
     best_result = 0

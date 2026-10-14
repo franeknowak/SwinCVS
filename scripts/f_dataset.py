@@ -87,8 +87,10 @@ def get_dataloaders(config, training_dataset, val_dataset, test_dataset):
                                     shuffle = False,
                                     pin_memory = True)
 
+    # Configs written before INFERENCE.BATCH_SIZE was added keep the original batch size of 1
+    test_batch_size = config.INFERENCE.BATCH_SIZE if 'INFERENCE' in config else 1
     test_dataloader = DataLoader(   test_dataset,
-                                    batch_size = 1,
+                                    batch_size = test_batch_size,
                                     shuffle = False,
                                     pin_memory = True)
     return train_dataloader, val_dataloader, test_dataloader
@@ -347,3 +349,95 @@ def get_transform_sequence(config):
                                                     mean=torch.tensor(mean),
                                                     std=torch.tensor(std))])
     return transform_sequence
+
+##############################################################################################
+# Inference-only Endoscapes-format csv pipeline (used by inference.py --dataset endoscapes)
+##############################################################################################
+
+def get_inference_dataset(config):
+    """
+    Build 5-frame sequences from an evaluation csv with columns vid, frame, C1, C2, C3.
+    Rows are read in consecutive blocks of 5 (one block per sequence) and the label is taken
+    from the last row of each block. Images are read from IMAGES_PATH as <vid>_<frame>.jpg.
+    """
+    if str(config.CSV_PATH).endswith(".csv") and Path(config.CSV_PATH).is_file():
+        csv_path = Path(config.CSV_PATH)
+
+        dataframe = pd.read_csv(csv_path)
+
+        sequence_data = []
+
+        last_index = (len(dataframe) // 5) * 5
+
+        for i in range(0, last_index, 5):
+            data = {}
+
+            five_frames = (
+                dataframe[["vid", "frame"]]
+                .apply(
+                    lambda x: str(x["vid"]) + "_" + str(x["frame"]).zfill(4) + ".jpg",
+                    axis=1,
+                )
+                .iloc[i : i + 5]
+                .tolist()
+            )
+            classification = list(
+                map(float, dataframe[["C1", "C2", "C3"]].iloc[i + 4].tolist())
+            )
+
+            for j, frame in enumerate(five_frames):
+                data[f"f{j}"] = frame
+
+            data["classification"] = classification
+
+            sequence_data.append(data)
+
+        sequence_dataframe = pd.DataFrame(sequence_data)
+
+        mean, std = config.ENDOSCAPES_MEAN, config.ENDOSCAPES_STD
+        transform_sequence = transforms.Compose(
+            [
+                transforms.Resize(tuple(config.RESIZE)),
+                transforms.CenterCrop(config.CENTER_CROP),
+                transforms.ToTensor(),
+                transforms.Normalize(mean=torch.tensor(mean), std=torch.tensor(std)),
+            ]
+        )
+
+        dataset = EndoscapesSwinCVS_Inference_Dataset(
+            sequence_dataframe, transform_sequence, images_path=config.IMAGES_PATH
+        )
+
+        return dataset
+    else:
+        raise FileNotFoundError(f"Invalid CSV Path: {config.CSV_PATH}")
+
+
+class EndoscapesSwinCVS_Inference_Dataset(Dataset):
+    """
+    Dataset creator for SwinCVS inference - 5 frame sequences, images read from images_path.
+    """
+
+    def __init__(self, image_dataframe, transform_sequence, images_path):
+        self.image_dataframe = image_dataframe
+        self.transforms = transform_sequence
+        self.images_path = images_path
+
+    def __len__(self):
+        return len(self.image_dataframe)
+
+    def __getitem__(self, idx):
+        sequence_info = self.image_dataframe.iloc[idx]
+        paths = [os.path.join(self.images_path, str(sequence_info[f"f{j}"])) for j in range(5)]
+
+        image_list = []
+        for path in paths:
+            image = Image.open(path)
+            image = self.transforms(image)
+            image = (image - torch.min(image)) / (-torch.min(image) + torch.max(image))
+            image_list.append(image)
+
+        images = torch.stack(image_list)
+        label = torch.tensor(sequence_info["classification"])
+
+        return images, label
